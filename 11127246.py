@@ -263,10 +263,10 @@ class mutithread( mutiProcess):
         result_queue = queue.Queue()
         frags_dataset = self.split_data(local_dataset, self.local_slice)
         start_time = time.time()  # recording start time
-        
+        #--------------------------------
         # create threads and start them
         for i in range( self.local_slice ):
-            t = threading.Thread(target=mutiProcess.bubblesort, args=(frags_dataset[i], result_queue ))
+            t = threading.Thread(target=mutithread.bubblesort, args=(frags_dataset[i], result_queue ))
             threads.append(t)
             t.start()
         # waiting all threads finish
@@ -274,11 +274,41 @@ class mutithread( mutiProcess):
             i.join()
             
         # gain data from finished thread
+        
+        #-------------------------------- sort frag here
+        
         sorted_frag = []
+        merge_threads = []
+        while not result_queue.empty():
+            sorted_frag.append(result_queue.get())
+            
+        #-------------------------------- gain frag here
+        result_merge_queue = queue.Queue()
         
-        
+        while len( sorted_frag ) > 1:
+            pairs_to_merge = []
+            # wrap 2 data prepare for going thread
+            for i in range( 0, len( sorted_frag ), 2 ):
+                if i + 1 < len(sorted_frag):
+                    pairs_to_merge.append((sorted_frag[i], sorted_frag[i + 1]))
+                else: # padding if not odd
+                    pairs_to_merge.append((sorted_frag[i], []))
+            # clear origin frag cause all wrap 
+            sorted_frag.clear()
+            for pair in pairs_to_merge:
+                merge_thread = threading.Thread(target = mutithread.merge_frag, args = (pair, result_merge_queue ) )
+                merge_threads.append(merge_thread)
+                merge_thread.start()
+
+            for merge_thread in merge_threads:
+                merge_thread.join()
+            
+            while not result_merge_queue.empty():
+                sorted_frag.append( result_merge_queue.get())
+                
+        local_result = sorted_frag[0] if sorted_frag else []
         end_time = time.time()  
-        self.output(local_dataset, start_time, end_time)
+        self.output(local_result, start_time, end_time)
     
             
 if __name__ == '__main__':
@@ -300,6 +330,11 @@ if __name__ == '__main__':
             task.removedata()
         elif algo == 3:
             task = mutiProcess(fileName, slice_count)
+            task.open_file("w", algo)
+            task.sorting( dataset)
+            task.removedata()
+        elif algo == 4:
+            task = mutithread(fileName, slice_count)
             task.open_file("w", algo)
             task.sorting( dataset)
             task.removedata()
