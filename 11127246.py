@@ -4,6 +4,7 @@ import time
 from collections import deque
 from datetime import datetime
 import multiprocessing
+import queue
 
 
 def readfile(filename: str):
@@ -62,8 +63,8 @@ class basebubblesort(object):
 
         self.file.write("CPU Time: " + str(end_time - start_time) + "\n")
         now = datetime.now()
-        output_time = now.strftime("%Y-%m-%d %H:%M:%S.%f%z")
-        output_time = output_time[:-2] + ':' + output_time[-2:]
+        output_time = now.strftime("%Y-%m-%d %H:%M:%S.%f")
+        output_time += output_time + "+8:00"
         self.file.write("Output Time: " + output_time + "\n")
 
     def open_file(self, mode: str, local_algo: str):
@@ -146,8 +147,8 @@ class oneProcess(basebubblesort):
 
         self.file.write("CPU Time: " + str(end_time - start_time) + "\n")
         now = datetime.now()
-        output_time = now.strftime("%Y-%m-%d %H:%M:%S.%f%z")
-        output_time = output_time[:-2] + ':' + output_time[-2:]
+        output_time = now.strftime("%Y-%m-%d %H:%M:%S.%f")
+        output_time += output_time + "+8:00"
         self.file.write("Output Time: " + output_time + "\n")
         
 class mutiProcess( oneProcess):
@@ -213,17 +214,72 @@ class mutiProcess( oneProcess):
             local_result = pool.map(self.bubblesort, frags_dataset)
         local_result = self.merge_sorted_list_with_muti_process( local_result )
         end_time = time.time()  # recording start time
-        self.file.write("Sort :" + "\n")
+        self.file.write("Sort : " + "\n")
         for i in local_result:
             self.file.write(str(i) + "\n" )
 
         self.file.write("CPU Time: " + str(end_time - start_time) + "\n")
         now = datetime.now()
-        output_time = now.strftime("%Y-%m-%d %H:%M:%S.%f%z")
-        output_time = output_time[:-2] + ':' + output_time[-2:]
+        output_time = now.strftime("%Y-%m-%d %H:%M:%S.%f")
+        output_time += output_time + "+8:00"
         self.file.write("Output Time: " + output_time + "\n")
         #print( local_result )
+        
+class mutithread( mutiProcess):
+    def __init__(self, filename: str, local_slice: int):
+        super().__init__(filename, local_slice)
 
+
+
+    @staticmethod
+    def bubblesort( local_dataset : list, local_result : queue ) -> list :
+        for i in range(len(local_dataset) - 1):
+            for j in range(len(local_dataset) - 1):
+                if local_dataset[j] > local_dataset[j + 1]:
+                    local_dataset[j], local_dataset[j + 1] = local_dataset[j + 1], local_dataset[j]
+        local_result.put(local_dataset)
+
+
+    @staticmethod
+    def merge_frag( pair_list : list, local_result : queue ) -> list :
+        first_lis, second_lis = pair_list[0], pair_list[1]
+        first_lis = deque(first_lis)
+        second_lis = deque(second_lis)
+        local__result = []
+
+        while len(first_lis) != 0 and len(second_lis) != 0:
+            if first_lis[0] < second_lis[0]:
+                local__result.append(first_lis.popleft())
+            else:
+                local__result.append(second_lis.popleft())
+
+        local__result.extend(first_lis)
+        local__result.extend(second_lis)
+        local_result.put(local__result)
+    
+
+    def sorting( self, local_dataset ):
+        threads = []
+        result_queue = queue.Queue()
+        frags_dataset = self.split_data(local_dataset, self.local_slice)
+        start_time = time.time()  # recording start time
+        
+        # create threads and start them
+        for i in range( self.local_slice ):
+            t = threading.Thread(target=mutiProcess.bubblesort, args=(frags_dataset[i], result_queue ))
+            threads.append(t)
+            t.start()
+        # waiting all threads finish
+        for i in threads:
+            i.join()
+            
+        # gain data from finished thread
+        sorted_frag = []
+        
+        
+        end_time = time.time()  
+        self.output(local_dataset, start_time, end_time)
+    
             
 if __name__ == '__main__':
     # command first input
